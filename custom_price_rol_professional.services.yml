@@ -1,0 +1,6 @@
+services:
+  custom_price_rol_professional.CustomPriceResolver:
+    class: Drupal\custom_price_rol_professional\Resolvers\CustomPriceResolver
+    arguments: ['@request_stack']
+    tags:
+      - { name: commerce_price.price_resolver, priority: 600 }

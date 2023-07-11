@@ -1,0 +1,118 @@
+<?php
+
+use Drupal\user\Entity\User;
+
+function custom_price_rol_professional_page_attachments(array &$page)
+{
+
+  $page['#attached']['library'][] = 'custom_price_rol_professional/commerce_tipsa';
+}
+
+function custom_price_rol_professional_preprocess_page(&$variables)
+{
+  $request = \Drupal::service('request_stack')->getCurrentRequest();
+  $requestUri = $request->getRequestUri();
+  $complete = (substr($requestUri, -9));
+  $iva = '';
+  $country_code_check = \Drupal::service('smart_ip.smart_ip_location')
+    ->get('countryCode');
+  $parameter = \Drupal::routeMatch()->getParameter('commerce_order');
+
+  $iva = 'si_iva';
+
+  $request = \Drupal::service('request_stack')->getCurrentRequest();
+  $requestUri = $request->getRequestUri();
+  $complete = (substr($requestUri, -7));
+  if ($parameter) {
+    if (\Drupal::routeMatch()->getRouteName() == "commerce_checkout.form") {
+      if ($parameter->uid->entity->uid[0]->getValue()['value'] !== '2') {
+        if ($parameter->billing_profile->entity && $parameter->billing_profile->entity->hasField('address') && !$parameter->billing_profile->entity->get('address')->isEmpty()) {
+          if ($complete == '/review') {
+            $billing_profile = $parameter->getBillingProfile();
+            if ($billing_profile) {
+              $address = $billing_profile->get('address')->first();
+              if (!is_null($address->getCountryCode())) {
+                $country = $address->getCountryCode();
+              }
+              $billing_address = $parameter->billing_profile->entity->tax_number->value;
+              if (isset($billing_address) && $country !== 'ES') {
+                $current_user_id = \Drupal::currentUser()->id();
+                $account = User::load($current_user_id);
+                $account->addRole('cliente_exento_de_iva');
+                $account->save();
+                \Drupal::service('commerce_order.order_refresh')->refresh($parameter);
+                $parameter->recalculateTotalPrice();
+                $iva = 'no_iva';
+                $parameter->save();
+              }
+            }
+          }
+        }
+      }
+    }
+
+    //dump($iva);
+    //enviar variables a javascript
+    $variables['#attached']['library'][] = 'custom_price_rol_professional/custom_price_rol_professional';
+    $variables['#attached']['drupalSettings']['custom_price_rol_professional']['iva'] = $iva;
+  }
+}
+
+function custom_price_rol_professional_form_commerce_checkout_flow_multistep_default_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
+  $region_code_check = \Drupal::service('smart_ip.smart_ip_location')->get('countryCode');
+  $current_user_id = \Drupal::currentUser()->id();
+  $account = User::load($current_user_id);
+  $rol_cliente_exento_de_iva = $account->hasRole('cliente_exento_de_iva');
+  $intracomunitario_field = 'no';
+  if($region_code_check != 'ES' && !$rol_cliente_exento_de_iva){
+    $intracomunitario_field = 'si';
+  }
+
+  if (isset($form['#form_id']) && $form['#form_id'] === 'commerce_checkout_flow_multistep_default') {
+    if (\Drupal::routeMatch()->getRouteName() == "commerce_checkout.form") {
+      $form['actions']['next']['#submit'][] = 'custom_price_rol_professional_change_role';
+    }
+  }
+
+  $form['#attached']['library'][] = 'custom_price_rol_professional/custom_price_rol_professional';
+  $form['#attached']['drupalSettings']['custom_price_rol_professional']['intracomunitario_field'] = $intracomunitario_field;
+}
+
+/**
+ * Callback function to change the user role.
+ */
+function custom_price_rol_professional_change_role(&$form, \Drupal\Core\Form\FormStateInterface $form_state) {
+  $order = \Drupal::routeMatch()->getParameter('commerce_order');
+  $iva = 'si_iva';
+  if ($order->uid->entity->uid[0]->getValue()['value'] !== '2') {
+    if ($order->billing_profile->entity && $order->billing_profile->entity->hasField('address') && !$order->billing_profile->entity->get('address')->isEmpty()) {
+      $country_code = $order->billing_profile->entity->tax_number->value;
+      $billing_address = $order->billing_profile->entity->tax_number->value;
+
+      if(isset($billing_address) && $country_code !== 'ES') {
+        $current_user_id = \Drupal::currentUser()->id();
+        $account = User::load($current_user_id);
+        $account->addRole('cliente_exento_de_iva');
+        $account->save();
+
+        $order->clearAdjustments();
+
+        foreach ($order->getItems() as $order_item) {
+          foreach ($order_item->getAdjustments() as $adjustment) {
+            if ($adjustment->getType() == 'tax') {
+              $order_item->setAdjustments([]);
+              $order_item->save();
+            }
+          }
+        }
+        \Drupal::service('commerce_order.order_refresh')->refresh($order);
+        $order->recalculateTotalPrice();
+        $order = \Drupal\commerce_order\Entity\Order::load($order->id());
+        $order->save();
+        $iva = 'no_iva';
+      }
+    }
+  }
+  $variables['#attached']['library'][] = 'custom_price_rol_professional/custom_price_rol_professional';
+  $variables['#attached']['drupalSettings']['custom_price_rol_professional']['iva'] = $iva;
+}

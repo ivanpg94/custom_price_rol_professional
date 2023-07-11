@@ -1,0 +1,7 @@
+name: Custom Price for Professional Rol
+type: module
+description: Custom module to show all product prices without VAT for the user professionals.
+core_version_requirement: ^8.8 || ^9
+package: Custom
+libraries:
+  - custom_price_rol_professional/custom_price_rol_professional

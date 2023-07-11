@@ -1,0 +1,8 @@
+custom_price_rol_professional:
+  version: 1.x
+  js:
+    js/iva.js: { }
+  dependencies:
+    - core/drupal
+    - core/jquery
+    - core/drupalSettings
